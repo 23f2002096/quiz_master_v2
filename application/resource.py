@@ -240,3 +240,228 @@ class ChapterManagement(Resource):
             return {"message": f"Failed to update chapter: {str(error)}"}, 500
 api.add_resource(ChapterManagement,'/chapters','/chapters/<int:chapter_id>')
 # working
+
+quiz_input_parser = reqparse.RequestParser()
+quiz_input_parser.add_argument('name', type=str, required=True, help='Quiz title is mandatory.')
+quiz_input_parser.add_argument('time_duration', type=str, required=True, help='Time duration must be in HH:MM format.')
+quiz_input_parser.add_argument('remarks', type=str, help='Optional remarks for the quiz.')
+quiz_input_parser.add_argument('chapter_id', type=int, required=True, help='Valid chapter ID is needed.')
+quiz_input_parser.add_argument('date_of_quiz', type=str, required=True, help='Quiz date is required (YYYY-MM-DD).')
+quiz_input_parser.add_argument('total_question', type=int, required=True, help='Number of questions must be specified.')
+
+quiz_output_fields = {
+    'id': fields.Integer,
+    'name': fields.String,
+    'time_duration': fields.String,
+    'remarks': fields.String,
+    'chapter_id': fields.Integer,
+    'date_of_quiz':fields.String,
+    'total_question':fields.Integer
+}
+
+class QuizManagement(Resource):
+    @auth_required('token')
+    
+    @roles_required('admin')
+    @marshal_with(quiz_output_fields)
+    def get(self, chapter_id=None, quiz_id=None):
+       
+        try:
+            if quiz_id:
+                return Quiz.query.get_or_404(quiz_id)
+            elif chapter_id:
+                return Quiz.query.filter_by(chapter_id=chapter_id).all()
+            return Quiz.query.all()
+        except Exception as error:
+            return {"message": f"Could not retrieve quiz data: {str(error)}"}, 500
+    
+    @auth_required('token')
+    @roles_required('admin')
+    def post(self, chapter_id):
+        
+        args = quiz_input_parser.parse_args()
+        try:
+            Chapter.query.get_or_404(chapter_id)
+            time_duration = args['time_duration'].strip()  # Store as string
+
+            try:
+                datetime.strptime(time_duration, "%H:%M")  # Validate format
+            except ValueError:
+                return {"message": "Invalid time format. Use HH:MM"}, 400
+            
+            quiz = Quiz(
+                name=args['name'],
+                time_duration=time_duration,
+                remarks=args['remarks'],
+                chapter_id=chapter_id,
+                date_of_quiz=datetime.strptime(args['date_of_quiz'], '%Y-%m-%d'),
+                total_question=args['total_question']
+            )
+            db.session.add(quiz)
+            db.session.commit()
+            return {"message": "Quiz created Successfully."}, 201
+        except Exception as error:
+            return {"message": f"Quiz creation failed: {str(error)}"}, 500
+
+    
+    
+    @auth_required('token')
+    @roles_required('admin')
+    def delete(self, quiz_id):
+        if not quiz_id:
+            return {"message": "Quiz ID is required."}, 400
+        
+        try:
+            quiz_to_remove = Quiz.query.get_or_404(quiz_id)
+            db.session.delete(quiz_to_remove)
+            db.session.commit()
+            return {"message": "Quiz removed successfully."}, 200
+        except Exception as error:
+            db.session.rollback()
+            return {"message": f"Could not remove quiz: {str(error)}"}, 500
+        
+    @auth_required('token')
+    @roles_required('admin')
+    def put(self, quiz_id):
+        
+        args = quiz_input_parser.parse_args()
+        try:
+            quiz_to_update = Quiz.query.get_or_404(quiz_id)
+            quiz_to_update.name = args['name']
+            
+           
+            time_string = args['time_duration'].strip()
+            # adding 00 if second is not present
+            if len(time_string.split(':')) == 2:
+                time_string += ":00" 
+            
+            try:
+                quiz_to_update.time_duration = time_string
+            except ValueError:
+                return {"message": "Use this time formate HH:MM or HH:MM:SS"}, 400
+            
+            quiz_to_update.remarks = args['remarks']
+            quiz_to_update.total_question = args['total_question']
+            quiz_to_update.date_of_quiz = datetime.strptime(args['date_of_quiz'], '%Y-%m-%d').date()
+            db.session.commit()
+            return {"message": "Quiz details updated."}, 200
+        except Exception as error:
+            return {"message": f"Failed to update the quiz: {str(error)}"}, 500
+api.add_resource(QuizManagement,'/quizzes/<int:chapter_id>','/quizzes/<int:quiz_id>')
+api.add_resource(QuizManagement, '/quizzes/<int:quiz_id>/delete', endpoint='quiz_remove')
+api.add_resource(QuizManagement, '/quizzes/<int:quiz_id>/update', endpoint='quiz_modify')
+# as i know working
+
+question_input_handler = reqparse.RequestParser()
+question_input_handler.add_argument('question', type=str, required=True, help='You must provide a question statement.', location='json')
+question_input_handler.add_argument('title', type=str, required=True, help='Title for the question is missing.', location='json')
+question_input_handler.add_argument('options', type=dict, required=True, help='Answer choices are required.', location='json')
+question_input_handler.add_argument('answer', type=str, required=True, help='Correct choice is missing.', location='json')
+
+question_response_fields  = {
+    'id': fields.Integer,
+    'question': fields.String,
+    'title': fields.String,
+    'options': fields.Raw,
+    'answer': fields.String,
+}
+class QuestionManagement(Resource):
+    @auth_required('token')
+    @roles_required('admin')
+    @marshal_with(question_response_fields)
+    def get(self, quiz_id, question_id=None):
+        user = User.query.filter_by(username='user0').first()
+        print(user)           
+        try:
+            if question_id:
+                question = Question.query.filter_by(id=question_id, quiz_id=quiz_id).first()
+                if not question:
+                    return {"message": "No matching question found."}, 404
+                return question
+            question_list = Question.query.filter_by(quiz_id=quiz_id).all()
+            return question_list
+        except Exception as error:
+            return {"message": f"Unable to fetch questions: {str(error)}"}, 500
+        
+
+    @auth_required('token')
+    @roles_required('admin')
+    @marshal_with(question_response_fields)
+    def post(self, quiz_id):
+        args = question_input_handler.parse_args()
+        try:
+            print("[DEBUG] Received payload:", args)
+            quiz_exists = Quiz.query.get(quiz_id)
+            if not quiz_exists:
+                return {"message": "Associated quiz not found."}, 404
+
+            if args['answer'] not in args['options']:
+                return {"message": "Correct answer must match an option key"}, 400
+
+            new_question = Question(
+                question=args['question'],
+                title=args['title'],
+                options=args['options'],
+                answer=args['answer'],
+                quiz_id=quiz_id,
+                chapter_id=quiz_exists.chapter_id
+            )
+            
+            
+            db.session.add(new_question)
+            db.session.commit()
+            
+            return new_question, 201
+        except IntegrityError:
+            db.session.rollback()
+            return {"message": "Question already exists or violates constraints"}, 400
+        except Exception as error:
+            db.session.rollback()
+            return {"message": f"Failed to create Question: {str(error)}"}, 500
+
+    @auth_required('token')
+    @roles_required('admin')
+    def delete(self, quiz_id, question_id):
+        try:
+            question_to_delete = Question.query.filter_by(id=question_id, quiz_id=quiz_id).first()
+            if not question_to_delete :
+                    return {"message": "Question not found."}, 404
+            db.session.delete(question_to_delete)
+            db.session.commit()
+            return {"message": "Question deleted successfully."}, 200
+        except Exception as error:
+            db.session.rollback()
+            return {"message": f"Error during deletion: {str(error)}"}, 500
+        
+    @auth_required('token')
+    @roles_required('admin')
+    @marshal_with(question_response_fields)
+    def put(self, quiz_id, question_id):
+        args = question_input_handler.parse_args()
+        try:
+            question_to_update = Question.query.filter_by(quiz_id=quiz_id, id=question_id).first_or_404()
+            if not question_to_update:
+                return {"message": "Question not found for update."}, 404
+            
+            if args['answer'] not in args['options']:
+                return {"message": "Correct answer must match an option key"}, 400
+            
+            quiz = Quiz.query.get_or_404(quiz_id)
+    
+            question_to_update.question = args['question']
+            question_to_update.title = args['title']
+            question_to_update.options = args['options']
+            question_to_update.answer = args['answer']
+            question_to_update.chapter_id = quiz.chapter_id
+            
+            db.session.commit()
+            return question_to_update, 200
+        except Exception as error:
+            db.session.rollback()
+            return {"message": f"Failed to update the question: {str(error)}"}, 500
+
+api.add_resource(
+    QuestionManagement,
+    '/quizzes/<int:quiz_id>/questions',
+    '/quizzes/<int:quiz_id>/questions/<int:question_id>'
+)
