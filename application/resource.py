@@ -1,18 +1,15 @@
 # ===== Corrected imports =====
 from flask_restful import Api, Resource, reqparse, fields, marshal_with
-from flask_security import auth_required,roles_required, roles_accepted, current_user, hash_password
-from flask import request,jsonify,abort,send_file
+from flask_security import auth_required,roles_required, current_user
+from flask import request,jsonify,abort
 from datetime import datetime
-from uuid import uuid4
 from .models import db, User, Role,Subject,Chapter,Question,Quiz,Score,UserAnswer
-from sqlalchemy.exc import SQLAlchemyError,IntegrityError
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import aliased
 from flask_restful import marshal
 from sqlalchemy import func
-# from celery.result import AsyncResult
-from io import BytesIO
-import csv
+# from flask_caching import Cache
 
 # ===== Initialize API =====
 api = Api(prefix='/api')
@@ -465,3 +462,165 @@ api.add_resource(
     '/quizzes/<int:quiz_id>/questions',
     '/quizzes/<int:quiz_id>/questions/<int:question_id>'
 )
+# ###############################validated
+
+user_quiz_output  = {
+    'id': fields.Integer,
+    'name': fields.String,
+    'time_duration': fields.String,
+    'date_of_quiz': fields.DateTime(dt_format='iso8601'),
+    'total_question': fields.Integer,
+    'is_completed': fields.Boolean,
+    'chapter': fields.Nested({
+        'name': fields.String,
+        'subject': fields.Nested({
+            'name': fields.String
+        })
+    }),
+    'status': fields.String
+}
+
+class UserQuizManagement(Resource):
+    @auth_required('token')
+    @roles_required('user')
+    def get(self):
+        try:
+            user_id  = current_user.id
+            today_date = datetime.today().date()
+
+            UserScore = aliased(Score)
+
+            fetched_quizzes = db.session.query(Quiz,UserScore.is_completed
+                ).options(joinedload(Quiz.chapter).joinedload(Chapter.subject)
+            ).outerjoin(
+                UserScore,
+                db.and_(
+                    Quiz.id == UserScore.quiz_id,
+                    UserScore.user_id == user_id
+                )
+            ).all()
+
+            structured_output = []
+            for quiz_entry, completed_flag in fetched_quizzes:
+                status_label = 'upcoming' if quiz_entry.date_of_quiz.date() > today_date else 'completed'
+                structured_output.append({
+                    'id': quiz_entry.id,
+                        'name': quiz_entry.name,
+                        'total_question': quiz_entry.total_question,
+                        'date_of_quiz': quiz_entry.date_of_quiz.date(),
+                        'time_duration': quiz_entry.time_duration,
+                        'is_completed': bool(completed_flag),
+                        'chapter': {
+                            'name': quiz_entry.chapter.name,
+                            'subject': {
+                                'name': quiz_entry.chapter.subject.name
+                            }
+                        },
+                        'status': status_label
+                })
+            
+            return marshal(structured_output, user_quiz_output), 200
+        except Exception as e:
+            return {"message": f"Error retrieving quizzes: {str(e)}"}, 500
+    
+
+api.add_resource(UserQuizManagement, '/user/quizzes')
+# working
+
+class UserQuizRetakeManagement(Resource):
+    @auth_required('token')
+    @roles_required('user')
+    def post(self, quiz_id):
+        try:
+            user_id  = current_user.id
+            quiz = Quiz.query.filter(Quiz.id == quiz_id).one_or_none()
+            if quiz is None:
+                return {'message': 'Quiz not found'}, 404
+            
+            score = Score.query.filter(
+                Score.quiz_id == quiz_id,
+                Score.user_id == user_id
+            ).one_or_none()
+            if score is None:
+                return {'message': 'You have not attempted this quiz yet'}, 400
+            
+            setattr(score, 'is_completed', False)
+            db.session.commit()
+            return {'message': 'Retake access granted', 'quiz_id': quiz_id}, 200
+        except Exception as error:
+            db.session.rollback() 
+            return {'message': str(error)}, 500
+
+api.add_resource(UserQuizRetakeManagement, '/user/quizzes/<int:quiz_id>/retake')
+
+
+question_schema  = {
+    'id': fields.Integer,
+    'question': fields.String,
+    'title': fields.String,
+    'options': fields.Raw
+}
+
+quiz_with_questions_schema  = {
+    'quiz': fields.Nested(user_quiz_output),
+    'questions': fields.List(fields.Nested(question_schema))
+}
+
+class UserQuizQuestionManagement(Resource):
+    @auth_required('token')
+    @roles_required('user')
+    def get(self, quiz_id):
+        
+        try:
+            today_date=datetime.today().date()
+            user_id = current_user.id
+
+            quiz = Quiz.query.options(
+                joinedload(Quiz.chapter).joinedload(Chapter.subject)
+            ).filter(Quiz.id == quiz_id).first()
+            
+            if quiz is None:
+                abort(404, description="Quiz not found.")
+            
+            if quiz.date_of_quiz.date() <= today_date:
+                abort(403, description="Access denied: This quiz is not yet open.")
+            questions = Question.query.filter(Question.quiz_id == quiz_id).all()
+            score = Score.query.filter(
+                Score.user_id == user_id, Score.quiz_id == quiz.id
+            ).first()
+            is_completed = bool(score.is_completed) if score else False
+
+            def build_quiz_dict(quiz, is_completed):
+                return {
+                    'id': quiz.id,
+                    'name': quiz.name,
+                    'date_of_quiz': quiz.date_of_quiz,
+                    'time_duration': quiz.time_duration,
+                    'is_completed': is_completed,
+                    'total_question': quiz.total_question,
+                    'chapter': {
+                        'name': quiz.chapter.name,
+                        'subject': {
+                            'name': quiz.chapter.subject.name
+                        }
+                    },
+                    'status': 'upcoming' if quiz.date_of_quiz.date() > today_date else 'completed'
+                }
+
+            quiz_dict = build_quiz_dict(quiz, is_completed)
+            questions_list = [
+                {
+                    'id': q.id,
+                    'question': q.question,
+                    'title': q.title,
+                    'options': q.options
+                } for q in questions
+            ]
+
+            return jsonify({'quiz': quiz_dict, 'questions': questions_list})
+        except Exception as error:
+            abort(500, description=f"An unexpected error occurred: {str(error)}")
+
+api.add_resource(UserQuizQuestionManagement, '/user/quiz/<int:quiz_id>')
+# working
+
