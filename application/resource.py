@@ -623,4 +623,3 @@ class UserQuizQuestionManagement(Resource):
 
 api.add_resource(UserQuizQuestionManagement, '/user/quiz/<int:quiz_id>')
 # working
-
