@@ -240,47 +240,18 @@ export default {
     },
 
     async createSubject() {
+      // Check if the user is logged in
       if (!this.token) {
-        alert('Please log in first');
+        alert('Please log in to continue');
         return;
       }
 
       this.isLoading = true;
 
       try {
-        const res = await fetch('/api/subjects', {
+        // Sending subject data to server
+        const response = await fetch('/api/subjects', {
           method: 'POST',
-          headers: {
-            'Authentication-Token': this.token,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(this.subjectForm),
-        });
-
-        if (res.ok) {
-          this.subjectForm = { name: '', description: '' };
-          await this.fetchSubjects();
-          this.closeModal();
-        } else {
-          const errorResponse = await res.json();
-          alert(`Failed to create subject: ${errorResponse.message || 'Unknown error'}`);
-        }
-      } finally {
-        this.isLoading = false;
-      }
-    },
-
-    async updateSubject() {
-      if (!this.token) {
-        alert('Please log in first');
-        return;
-      }
-
-      this.isLoading = true;
-
-      try {
-        const res = await fetch(`/api/subjects/${this.subjectForm.id}`, {
-          method: 'PUT',
           headers: {
             'Authentication-Token': this.token,
             'Content-Type': 'application/json',
@@ -291,42 +262,93 @@ export default {
           }),
         });
 
-        if (res.ok) {
-          const data = await res.json();
-          alert(data.message);
+        if (response.ok) {
+          // Reset form and reload subjects
+          this.subjectForm = { name: '', description: '' };
           this.closeModal();
           await this.fetchSubjects();
         } else {
-          const errorResponse = await res.json();
-          alert(`Failed to update subject: ${errorResponse.message || 'Unknown error'}`);
+          // If server sends error, show it
+          const errorMsg = await response.json();
+          alert('Could not add subject: ' + (errorMsg.message || 'Something went wrong'));
         }
-      } catch (err) {
-        console.error(err);
-        alert('An error occurred while updating the subject');
+      } catch (error) {
+        console.error('Create subject error:', error);
       } finally {
         this.isLoading = false;
       }
     },
 
-    async deleteSubject(subjectId) {
-      if (!confirm('Are you sure?')) return;
+    async updateSubject() {
+      // Make sure the user is logged in
+      if (!this.token) {
+        alert('Please log in first to update subject');
+        return;
+      }
+
+      this.isLoading = true;
+
       try {
-        const res = await fetch(`/api/subjects/${subjectId}`, {
+        const subjectId = this.subjectForm.id;
+        const payload = {
+          name: this.subjectForm.name,
+          description: this.subjectForm.description,
+        };
+
+        const updateResponse = await fetch(`/api/subjects/${subjectId}`, {
+          method: 'PUT',
+          headers: {
+            'Authentication-Token': this.token,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (updateResponse.ok) {
+          const result = await updateResponse.json();
+          alert(result.message || 'Subject updated successfully');
+          this.closeModal();
+          await this.fetchSubjects();
+        } else {
+          const errorData = await updateResponse.json();
+          alert('Error updating subject: ' + (errorData.message || 'Something went wrong'));
+        }
+      } catch (error) {
+        console.error('Update subject failed:', error);
+        alert('An unexpected error occurred during subject update');
+      } finally {
+        this.isLoading = false;
+      }
+    },
+
+
+    async deleteSubject(id) {
+      const confirmDelete = confirm('Do you really want to remove this subject?');
+      if (!confirmDelete) return;
+
+      // Making API call to delete the subject
+      try {
+        const options = {
           method: 'DELETE',
           headers: {
             'Authentication-Token': this.token,
             'Content-Type': 'application/json',
           },
-        });
-        if (res.ok) {
+        };
+
+        const response = await fetch(`/api/subjects/${id}`, options);
+
+        if (response.ok) {
+          // Refresh the subject list after deletion
           await this.fetchSubjects();
         } else {
-          alert('Failed to delete subject');
+          alert('Oops! Could not delete the subject.');
         }
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        console.log('Something went wrong while deleting:', error);
       }
     },
+
 
     editSubject(subject) {
       this.subjectForm = { ...subject };
@@ -334,67 +356,104 @@ export default {
     },
 
     async createOrUpdateChapter() {
+      // User must be logged in
       if (!this.token) {
-        alert('Please log in first');
+        alert('Please log in first to continue');
         return;
       }
 
       this.isLoading = true;
 
       try {
-        const method = this.chapterForm.id ? 'PUT' : 'POST';
-        const url = this.chapterForm.id ? `/api/chapters/${this.chapterForm.id}` : '/api/chapters';
+        let chapterUrl = '/api/chapters';
+        let httpMethod = 'POST';
 
-        const res = await fetch(url, {
-          method: method,
+        // If editing, change the method and URL
+        if (this.chapterForm.id) {
+          chapterUrl = `/api/chapters/${this.chapterForm.id}`;
+          httpMethod = 'PUT';
+        }
+
+        const sendData = {
+          name: this.chapterForm.name,
+          description: this.chapterForm.description,
+          subject_id: this.chapterForm.subject_id,
+        };
+
+        const response = await fetch(chapterUrl, {
+          method: httpMethod,
           headers: {
             'Authentication-Token': this.token,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(this.chapterForm),
+          body: JSON.stringify(sendData),
         });
 
-        if (res.ok) {
-          this.chapterForm = { id: null, name: '', description: '', subject_id: this.currentSubjectId };
+        if (response.ok) {
+          // Reset form and refresh list
+          this.chapterForm = {
+            id: null,
+            name: '',
+            description: '',
+            subject_id: this.currentSubjectId,
+          };
           this.closeChapterModal();
           await this.fetchSubjects();
         } else {
-          const errorResponse = await res.json();
-          alert(`Failed to ${this.chapterForm.id ? 'update' : 'create'} chapter: ${errorResponse.message || 'Unknown error'}`);
+          const error = await response.json();
+          const action = this.chapterForm.id ? 'update' : 'create';
+          alert(`Could not ${action} chapter: ${error.message || 'Something went wrong'}`);
         }
-      } catch (err) {
-        console.error(err);
-        alert(`An error occurred while ${this.chapterForm.id ? 'updating' : 'creating'} the chapter`);
+      } catch (error) {
+        const doing = this.chapterForm.id ? 'updating' : 'creating';
+        console.log('Chapter error:', error);
+        alert(`Error occurred while ${doing} the chapter`);
       } finally {
         this.isLoading = false;
       }
     },
 
-    async deleteChapter(chapterId) {
-      if (!confirm('Are you sure?')) return;
+    async deleteChapter(id) {
+      const confirmDelete = confirm('Do you want to delete this chapter?');
+
+      if (!confirmDelete) {
+        return;
+      }
+
       try {
-        const res = await fetch(`/api/chapters/${chapterId}`, {
+        const options = {
           method: 'DELETE',
           headers: {
             'Authentication-Token': this.token,
             'Content-Type': 'application/json',
           },
-        });
-        if (res.ok) {
+        };
+
+        const response = await fetch(`/api/chapters/${id}`, options);
+
+        if (response.status === 200) {
+          // Refresh subjects and chapters after successful deletion
           await this.fetchSubjects();
         } else {
-          alert('Failed to delete chapter');
+          alert('Unable to delete chapter. Please try again.');
         }
-      } catch (err) {
-        console.error(err);
+      } catch (error) {
+        console.log('Error while deleting chapter:', error);
       }
     },
 
-    editChapter(chapter) {
-      this.chapterForm = { ...chapter };
-      this.chapterForm.subject_id = this.currentSubjectId;
+    editChapter(chapterToEdit) {
+      // Set the form values using a new object
+      this.chapterForm = {
+        id: chapterToEdit.id || null,
+        name: chapterToEdit.name || '',
+        description: chapterToEdit.description || '',
+        subject_id: this.currentSubjectId || '',
+      };
+
+      // Open the modal for editing
       this.showChapterModal = true;
-    },
+    }
   },
 
   mounted() {
