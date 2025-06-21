@@ -238,58 +238,68 @@ export default {
   methods: {
     async fetchChapters() {
       try {
-        const response = await fetch('/api/chapters', {
+        const res = await fetch('/api/chapters', {
           headers: {
             'Authentication-Token': this.token,
-            'Content-Type': 'application/json',
-          },
+            'Content-Type': 'application/json'
+          }
         });
 
-        const data = await response.json();
-        
-        this.chapters = data.map(chapter => ({
-          ...chapter,
-          quizzes: []
-        }));
+        const chapterList = await res.json();
 
-        await Promise.all(this.chapters.map(async (chapter) => {
-          const quizResponse = await fetch(`/api/quizzes/${chapter.id}`, {
+        // Set chapters with empty quizzes initially
+        this.chapters = [];
+        for (let i = 0; i < chapterList.length; i++) {
+          const chap = chapterList[i];
+          chap.quizzes = [];
+          this.chapters.push(chap);
+        }
+
+        // Now fetch quizzes for each chapter
+        for (let i = 0; i < this.chapters.length; i++) {
+          const chap = this.chapters[i];
+          const quizRes = await fetch(`/api/quizzes/${chap.id}`, {
             headers: {
               'Authentication-Token': this.token,
-              'Content-Type': 'application/json',
-            },
+              'Content-Type': 'application/json'
+            }
           });
-          // console.log(quizResponse);
 
-          if (quizResponse.ok) {
-            const quizzes = await quizResponse.json();
-            
-            const quizzesWithQuestions = await Promise.all(quizzes.map(async (quiz) => {
-              const questionResponse = await fetch(`/api/quizzes/${quiz.id}/questions`, {
+          if (quizRes.ok) {
+            const quizList = await quizRes.json();
+            const quizzesWithQuestions = [];
+
+            for (let j = 0; j < quizList.length; j++) {
+              const quiz = quizList[j];
+              const quesRes = await fetch(`/api/quizzes/${quiz.id}/questions`, {
                 headers: {
                   'Authentication-Token': this.token,
-                  'Content-Type': 'application/json',
-                },
+                  'Content-Type': 'application/json'
+                }
               });
-              if (questionResponse.ok) {
-                const questions = await questionResponse.json();
-                
-                return { ...quiz, questions: Array.isArray(questions) ? questions : [] };
+
+              if (quesRes.ok) {
+                const questionList = await quesRes.json();
+                quiz.questions = Array.isArray(questionList) ? questionList : [];
               } else {
-                return { ...quiz, questions: [] };
+                quiz.questions = [];
               }
-            }));
-            this.$set(chapter, 'quizzes', quizzesWithQuestions);
+
+              quizzesWithQuestions.push(quiz);
+            }
+
+            this.$set(chap, 'quizzes', quizzesWithQuestions);
           } else {
-            this.$set(chapter, 'quizzes', []);
+            this.$set(chap, 'quizzes', []);
           }
-        }));
-      } catch (error) {
-        console.error('Failed to fetch chapters and quizzes:', error);
+        }
+      } catch (err) {
+        console.log('Something went wrong while loading chapters:', err);
       }
     },
 
-    openQuestionModal(quizId) {
+        openQuestionModal(quizId) {
+      // Reset question form
       this.questionForm = {
         title: '',
         question: '',
@@ -299,78 +309,97 @@ export default {
         option4: '',
         answer: ''
       };
+
+      // Set quizId and open modal
       this.currentQuizId = quizId;
       this.showQuestionModal = true;
       this.isEditingQuestion = false;
     },
 
-    closeQuestionModal() {
+        closeQuestionModal() {
+      // Simply hide the modal
       this.showQuestionModal = false;
     },
 
-    editQuestion(quizId, question) {
+        editQuestion(quizId, ques) {
       this.questionForm = {
-        id: question.id,
-        title: question.title,
-        question: question.question,
-        option1: question.options.option1 || '',
-        option2: question.options.option2 || '',
-        option3: question.options.option3 || '',
-        option4: question.options.option4 || '',
-        answer: question.answer
+        id: ques.id,
+        title: ques.title || '',
+        question: ques.question || '',
+        option1: (ques.options && ques.options.option1) || '',
+        option2: (ques.options && ques.options.option2) || '',
+        option3: (ques.options && ques.options.option3) || '',
+        option4: (ques.options && ques.options.option4) || '',
+        answer: ques.answer || ''
       };
+
       this.currentQuizId = quizId;
       this.isEditingQuestion = true;
       this.showQuestionModal = true;
     },
 
     async submitQuestion() {
+      // Start loader
       this.isLoading = true;
+
+      // Prepare URL and HTTP method based on editing or new
+      let endpoint = '';
+      let httpMethod = '';
+      if (this.isEditingQuestion) {
+        endpoint = `/api/quizzes/${this.currentQuizId}/questions/${this.questionForm.id}`;
+        httpMethod = 'PUT';
+      } else {
+        endpoint = `/api/quizzes/${this.currentQuizId}/questions`;
+        httpMethod = 'POST';
+      }
+
+      // Build the data for the question
+      let dataToSend = {
+        title: this.questionForm.title,
+        question: this.questionForm.question,
+        options: {
+          option1: this.questionForm.option1,
+          option2: this.questionForm.option2,
+          option3: this.questionForm.option3 ? this.questionForm.option3 : null,
+          option4: this.questionForm.option4 ? this.questionForm.option4 : null
+        },
+        answer: this.questionForm.answer
+      };
+
       try {
-        const url = this.isEditingQuestion
-          ? `/api/quizzes/${this.currentQuizId}/questions/${this.questionForm.id}`
-          : `/api/quizzes/${this.currentQuizId}/questions`;
-        const method = this.isEditingQuestion ? 'PUT' : 'POST';
-
-        const questionData = {
-          title: this.questionForm.title,
-          question: this.questionForm.question,
-          options: {
-            option1: this.questionForm.option1,
-            option2: this.questionForm.option2, 
-            option3: this.questionForm.option3 || null,
-            option4: this.questionForm.option4 || null
-          },
-          answer: this.questionForm.answer
-        };
-
-        const response = await fetch(url, {
-          method,
+        const res = await fetch(endpoint, {
+          method: httpMethod,
           headers: {
             'Content-Type': 'application/json',
-            'Authentication-Token': this.token,
+            'Authentication-Token': this.token
           },
-          body: JSON.stringify(questionData),
+          body: JSON.stringify(dataToSend)
         });
 
-        if (!response.ok) {
-          const errorMessage = await response.text();
-          throw new Error(`Error: ${response.status} ${response.statusText} - ${errorMessage}`);
+        if (res.ok) {
+          console.log('Question was saved successfully.');
+          this.closeQuestionModal();
+          await this.fetchChapters();
+        } else {
+          const msg = await res.text();
+          console.log('Error while saving question:', msg);
+          alert('Failed to submit the question');
         }
-
-        console.log('Question submitted successfully.');
-        this.closeQuestionModal();
-        await this.fetchChapters();
-      } catch (error) {
-        console.error('Failed to submit question:', error);
+      } catch (err) {
+        console.log('Something went wrong during question submit:', err);
       } finally {
+        // Stop loader
         this.isLoading = false;
       }
     },
 
     async fetchQuestions(quizId) {
+      // Start the process to get questions of a specific quiz
       try {
-        const response = await fetch(`/api/quizzes/${quizId}/questions`, {
+        const url = `/api/quizzes/${quizId}/questions`;
+
+        const response = await fetch(url, {
+          method: 'GET',
           headers: {
             'Authentication-Token': this.token,
             'Content-Type': 'application/json',
@@ -378,116 +407,160 @@ export default {
         });
 
         if (response.ok) {
-          const questions = await response.json();
-          
-          this.chapters.forEach(chapter => {
-            const quiz = chapter.quizzes.find(q => q.id === quizId);
-            if (quiz) {
-              this.$set(quiz, 'questions', questions);
+          const questionList = await response.json();
+
+          // Now try to find the chapter which has this quiz
+          for (let i = 0; i < this.chapters.length; i++) {
+            let chapter = this.chapters[i];
+
+            // Find the quiz inside this chapter
+            for (let j = 0; j < chapter.quizzes.length; j++) {
+              if (chapter.quizzes[j].id === quizId) {
+                // Use Vue's reactivity to assign questions
+                this.$set(chapter.quizzes[j], 'questions', questionList);
+                break;
+              }
             }
-          });
+          }
+        } else {
+          console.log('Could not fetch questions. Server responded with status:', response.status);
         }
-      } catch (error) {
-        console.error('Error fetching questions:', error);
+      } catch (err) {
+        console.error('Something went wrong while getting questions:', err);
       }
     },
 
     async deleteQuestion(quizId, questionId) {
-      if (!confirm('Are you sure you want to delete this question?')) return;
+      // Ask user before deleting
+      const userConfirmed = confirm("Are you sure you want to delete this question?");
+      if (!userConfirmed) {
+        return; // exit if user cancels
+      }
 
       try {
-        const response = await fetch(`/api/quizzes/${quizId}/questions/${questionId}`, {
-          method: 'DELETE',
+        // Send request to remove the question
+        const result = await fetch(`/api/quizzes/${quizId}/questions/${questionId}`, {
+          method: "DELETE",
           headers: {
-            'Content-Type': 'application/json',
-            'Authentication-Token': this.token,
-          },
+            "Content-Type": "application/json",
+            "Authentication-Token": this.token
+          }
         });
 
-        if (response.ok) {
-          await this.fetchChapters();
+        // Refresh data if successful
+        if (result.ok) {
+          await this.fetchChapters(); // reload updated list
+        } else {
+          console.warn("Failed to delete the question. Status:", result.status);
         }
-      } catch (error) {
-        console.error('Failed to delete question:', error);
+      } catch (problem) {
+        console.error("Error while deleting question:", problem);
       }
     },
+
     openQuizModal(chapterId) {
-      this.quizForm = { name: '', time_duration: '', remarks: '', date_of_quiz: '', total_question: '', chapter_id: chapterId };
+      // Prepare form for new quiz input
+      this.quizForm = {
+        name: "",
+        time_duration: "",
+        remarks: "",
+        date_of_quiz: "",
+        total_question: "",
+        chapter_id: chapterId
+      };
+
       this.currentQuizId = chapterId;
       this.showQuizModal = true;
-      this.isEditingQuiz = false;
+      this.isEditingQuiz = false; // since we are adding new
     },
 
     closeQuizModal() {
+      // Just hide the quiz form modal
       this.showQuizModal = false;
     },
 
     async submitQuiz() {
       this.isLoading = true;
+
       try {
-        const url = this.isEditingQuiz
-          ? `/api/quizzes/${this.quizForm.id}/update`
-          : `/api/quizzes/${this.quizForm.chapter_id}`;
-        const method = this.isEditingQuiz ? 'PUT' : 'POST';
+        // Figure out if we're updating or creating a new quiz
+        let endpoint = '';
+        let httpMethod = '';
 
-        const response = await fetch(url, {
-          method,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authentication-Token': this.token,
-          },
-          body: JSON.stringify(this.quizForm),
-        });
-
-        if (!response.ok) {
-          const errorMessage = await response.text();
-          throw new Error(`Error: ${response.status} ${response.statusText} - ${errorMessage}`);
+        if (this.isEditingQuiz) {
+          endpoint = `/api/quizzes/${this.quizForm.id}/update`;
+          httpMethod = 'PUT';
+        } else {
+          endpoint = `/api/quizzes/${this.quizForm.chapter_id}`;
+          httpMethod = 'POST';
         }
 
-        console.log('Quiz submitted successfully.');
-        this.closeQuizModal();
-        await this.fetchChapters();
-      } catch (error) {
-        console.error('Failed to submit quiz:', error);
+        // Send request to backend
+        const req = await fetch(endpoint, {
+          method: httpMethod,
+          headers: {
+            'Content-Type': 'application/json',
+            'Authentication-Token': this.token
+          },
+          body: JSON.stringify(this.quizForm)
+        });
+
+        // Check if server responded OK
+        if (!req.ok) {
+          const errMsg = await req.text();
+          throw new Error(`Submission failed: ${req.status} ${req.statusText} - ${errMsg}`);
+        }
+
+        console.log('Quiz sent successfully.');
+        this.closeQuizModal(); // hide modal after success
+        await this.fetchChapters(); // refresh list
+      } catch (submitError) {
+        console.error('There was an error submitting the quiz:', submitError);
       } finally {
         this.isLoading = false;
       }
     },
 
-    editQuiz(quiz) {
-      // If quiz.date_of_quiz is "2025-05-23 00:00:00", extract "2025-05-23"
-      let dateOnly = quiz.date_of_quiz;
-      if (typeof dateOnly === 'string' && dateOnly.includes(' ')) {
-        dateOnly = dateOnly.split(' ')[0];
+    editQuiz(quizInfo) {
+      // Just making sure date is in correct format
+      let cleanedDate = quizInfo.date_of_quiz;
+      if (typeof cleanedDate === 'string' && cleanedDate.includes(' ')) {
+        cleanedDate = cleanedDate.split(' ')[0]; // keep only date part
       }
-      this.quizForm = { ...quiz, date_of_quiz: quiz.date_of_quiz.split('T')[0],
-        time_duration: quiz.time_duration.split(' ')[1]?.slice(0,5)
-       };
+
+      this.quizForm = {
+        ...quizInfo,
+        date_of_quiz: cleanedDate || '',
+        time_duration: quizInfo.time_duration.split(' ')[1]?.slice(0, 5) || ''
+      };
+
       this.isEditingQuiz = true;
       this.showQuizModal = true;
     },
 
     async deleteQuiz(quizId) {
-      if (!confirm('Are you sure you want to delete this quiz?')) return;
+      const confirmDelete = confirm('Are you sure you want to delete this quiz?');
+      if (!confirmDelete) return;
+
       try {
-        const response = await fetch(`/api/quizzes/${quizId}/delete`, {
+        const delResponse = await fetch(`/api/quizzes/${quizId}/delete`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
-            'Authentication-Token': this.token,
-          },
+            'Authentication-Token': this.token
+          }
         });
 
-        if (response.ok) {
-          alert('Quiz deleted successfully.');
-          await this.fetchChapters();
+        if (delResponse.ok) {
+          alert('Quiz removed successfully!');
+          await this.fetchChapters(); // refresh data after deletion
         } else {
-          const errorText = await response.text();
-          alert(`Failed to delete quiz: ${errorText}`);
+          const errText = await delResponse.text();
+          alert('Quiz could not be deleted: ' + errText);
         }
-      } catch (error) {
-        console.error('Failed to delete quiz:', error);
-        alert('An error occurred while trying to delete the quiz.');
+      } catch (delError) {
+        console.error('Error deleting quiz:', delError);
+        alert('Something went wrong while trying to delete the quiz.');
       }
     },
   },
