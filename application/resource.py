@@ -9,11 +9,13 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import aliased
 from flask_restful import marshal
 from sqlalchemy import func
-# from flask_caching import Cache
+from flask_caching import Cache
 
 # ===== Initialize API =====
 api = Api(prefix='/api')
 
+# ====Initialize cahe===
+cache=Cache()
 
 # ===== Fields to Marshal =====
 user_output  = {
@@ -32,7 +34,6 @@ user_output  = {
 class ManageUsers(Resource):
     @marshal_with(user_output)
     def get(self):
-        # fetch the role for admin
         admin_role = Role.query.filter_by(name='admin').first()
         
        
@@ -77,16 +78,12 @@ class SubjectResourceForUser(Resource):
     def get(self):
         
         try:
-            # Fetch all subjects from the database
             all_subjects = Subject.query.all()
             return marshal(all_subjects,subject_output),200
         except Exception as error:
             return {"message": f"Error to get the subjects for database: {str(error)}"}, 500
 api.add_resource(SubjectResourceForUser, '/user/subjects')
 # working
-
-#change->> SubjectResourceForStudent -> SubjectResourceForUser
-# /student/subjects -> /user/subjects
 
 
 subject_request_parser = reqparse.RequestParser()
@@ -347,7 +344,7 @@ class QuizManagement(Resource):
 api.add_resource(QuizManagement,'/quizzes/<int:chapter_id>','/quizzes/<int:quiz_id>')
 api.add_resource(QuizManagement, '/quizzes/<int:quiz_id>/delete', endpoint='quiz_remove')
 api.add_resource(QuizManagement, '/quizzes/<int:quiz_id>/update', endpoint='quiz_modify')
-# as i know working
+# working
 
 question_input_handler = reqparse.RequestParser()
 question_input_handler.add_argument('question', type=str, required=True, help='You must provide a question statement.', location='json')
@@ -462,7 +459,7 @@ api.add_resource(
     '/quizzes/<int:quiz_id>/questions',
     '/quizzes/<int:quiz_id>/questions/<int:question_id>'
 )
-# ###############################validated
+
 
 user_quiz_output  = {
     'id': fields.Integer,
@@ -623,3 +620,330 @@ class UserQuizQuestionManagement(Resource):
 
 api.add_resource(UserQuizQuestionManagement, '/user/quiz/<int:quiz_id>')
 # working
+
+class UnixDateTime(fields.Raw):
+    def format(self, value):
+        return value.isoformat() if value else None
+
+score_schema  = {
+    'id': fields.Integer,
+    'quiz_id': fields.Integer,
+    'total_score': fields.Integer,
+    'timestamp': UnixDateTime(),
+    'is_completed': fields.Boolean
+}
+class UserQuizSubmitManagement(Resource):
+    @auth_required('token')
+    @roles_required('user')
+    def post(self, quiz_id):
+        user_id  = current_user.id
+        prior_score = Score.query.filter_by(
+            quiz_id=quiz_id,
+            user_id=user_id 
+        ).first()
+        if prior_score and prior_score.is_completed:
+            abort(400, description="You have already submitted this quiz.")
+
+        if not request.is_json:
+            abort(415, description="Request must be in JSON")
+
+        ans = request.get_json().get('answers', {})
+        if not isinstance(ans, dict):
+            abort(400, description="Invalid format for answers. Must be a dictionary.")
+
+           
+        quiz_questions = Question.query.filter_by(quiz_id=quiz_id).order_by(Question.id).all()
+        question_index_map = {str(index+1): question.id for index, question in enumerate(quiz_questions)}
+       
+        total_score = 0
+
+        for question_number, question_id in question_index_map.items():
+            user_response  = ans.get(question_number) 
+            
+            user_ans = UserAnswer.query.filter_by(
+                user_id=user_id,
+                quiz_id=quiz_id,
+                question_id=question_id
+            ).first()
+            if not user_ans:
+                user_ans = UserAnswer(
+                    user_id=user_id,
+                    quiz_id=quiz_id,
+                    question_id=question_id
+                )
+                           
+            user_ans.chosen_option = user_response
+            db.session.add(user_ans)
+
+            if user_response:
+                try:
+                    question = Question.query.get(question_id)
+                    correct_value = question.options.get(question.answer)
+                    
+                    if str(user_response).strip().lower() == str(correct_value).strip().lower():
+                        total_score += 1
+                    
+                except Exception as error:
+                    print(f"[Score Error] Question ID {question_id}: {str(error)}")
+
+            else:
+                    print(f"[Warning] No response for Question ID {question_id}")
+
+            try:
+                db.session.flush()
+                db.session.commit()
+            except Exception as err:
+                db.session.rollback()
+                abort(500, description="Failed to save your submitted answers.")
+        try:
+            if prior_score:
+                prior_score.total_score = total_score
+                prior_score.is_completed = True
+                prior_score.timestamp = datetime.utcnow()
+                final_score = prior_score
+            else:
+                final_score = Score(
+                    quiz_id=quiz_id,
+                    user_id=user_id,
+                    total_score=total_score,
+                    is_completed=True
+                )
+                db.session.add(final_score)
+
+            db.session.commit()
+        except Exception as error:
+            db.session.rollback()
+            print(f"[Score Commit Error]: {str(error)}")
+            abort(500, description="An internal error occurred while recording your score.")
+
+        return marshal(final_score, score_schema), 201
+api.add_resource(UserQuizSubmitManagement, '/user/quiz/<int:quiz_id>/submit')
+
+
+class UserQuizResultManagement(Resource):
+    @auth_required('token')
+    @roles_required('user')
+    def get(self, quiz_id):
+        user_id  = current_user.id
+        questions = Question.query.filter_by(quiz_id=quiz_id).all()
+        user_score  = Score.query.filter_by(quiz_id=quiz_id, user_id=user_id).first()
+
+       
+        results = []
+        for question in questions:
+           
+            user_answer_obj = UserAnswer.query.filter_by(quiz_id = quiz_id, user_id = user_id, question_id = question.id).first()
+            user_answer = user_answer_obj.chosen_option if user_answer_obj else None
+
+            is_correct = False
+            if user_score:
+                correct_value = question.options.get(question.answer)
+                is_correct = (str(user_answer).strip().lower() == str(correct_value).strip().lower())
+            else:
+                is_correct = False
+
+            results.append({
+                'question': question.question,
+                'options': question.options,
+                'answer': question.options.get(question.answer),
+                'user_answer': user_answer,
+                'is_correct': is_correct
+            })
+
+        return jsonify(results)
+
+
+api.add_resource(UserQuizResultManagement, '/user/quiz/<int:quiz_id>/result')
+# working
+
+class MarkQuizAsCompleted(Resource):
+    @auth_required('token')
+    @roles_required('user')
+    def post(self, quiz_id):
+        user_id  = current_user.id
+
+        
+        prior_score = Score.query.filter_by(
+            quiz_id=quiz_id,
+            user_id=user_id 
+        ).first()
+
+        if prior_score and prior_score.is_completed:
+            return {"message": "Quiz already completed", "status": "already_completed"}, 200
+
+        
+        if prior_score:
+            prior_score.total_score = 0
+            prior_score.is_completed = True
+            prior_score.timestamp = db.func.current_timestamp()
+        else:
+            new_score = Score(
+                quiz_id=quiz_id,
+                user_id=user_id ,
+                total_score=0,
+                is_completed=True
+            )
+            db.session.add(new_score)
+
+        try:
+            db.session.commit()
+            return {
+                "message": "Quiz marked as completed",
+                "status": "completed"
+            }, 200
+        except Exception as error:
+            db.session.rollback()
+            return {
+                "message": f"Error completing quiz: {str(error)}",
+                "status": "error"
+            }, 500
+
+api.add_resource(MarkQuizAsCompleted, '/user/quiz/<int:quiz_id>/completed')
+
+
+class CustomDateTimeField(fields.DateTime):
+    def format(self, value):
+        if value is None:
+            return None
+        return value.isoformat()
+
+score_fields_with_quiz = {
+    'id' : fields.Integer,
+    'timestamp' : fields.String,
+    'total_score' : fields.Integer,
+    'quiz' : fields.Nested({
+        'id' : fields.Integer,
+        'name' : fields.String,
+        'total_question' : fields.Integer
+    })
+}
+
+class UserScoresManagment(Resource):
+    @auth_required('token')
+    def get(self):
+        user_id = current_user.id
+        scores = Score.query.filter_by(user_id=user_id).join(Quiz).all()
+
+        result = []
+        for score in scores:
+            formatted_score = {
+                'id': score.id,
+                'timestamp': score.time_stamp_of_attempt.isoformat() if score.time_stamp_of_attempt else None,
+                'total_score': score.total_score,
+                'quiz': {
+                    'id': score.quiz.id,
+                    'name': score.quiz.name,
+                    'total_question': score.quiz.total_question
+                }
+            }
+            result.append(formatted_score)
+
+        return marshal(result, score_fields_with_quiz), 200
+    
+api.add_resource(UserScoresManagment, '/user/scores')
+
+summary_fields = {
+    'total_users': fields.Integer,
+    'total_subjects': fields.Integer,
+    'total_quizzes': fields.Integer,
+    'subjects_data': fields.List(fields.Nested({
+        'name': fields.String,
+        'chapters': fields.Integer,
+        'quizzes': fields.Integer,
+        'total_questions': fields.Integer 
+    }))
+}
+
+class AdminSummaryManagment(Resource):
+    @auth_required('token')
+    @cache.cached(timeout=60)
+    @roles_required('admin')
+    def get(self):
+        total_users = User.query.filter(~User.roles.any(Role.name == 'admin')).count()
+        total_quizzes = Quiz.query.count()
+        subjects = Subject.query.options(joinedload(Subject.chapters).joinedload(Chapter.quizzes)).all()
+        total_subjects = len(subjects)
+        
+
+        subjects_data = []
+        for subject in subjects:
+            chapters = subject.chapters
+            chapter_count = len(chapters)
+            quizzes = [quiz for chapter in chapters for quiz in chapter.quizzes]
+            quiz_count = len(quizzes)
+            total_question = sum(quiz.total_question for quiz in quizzes)
+
+
+            subjects_data.append({
+                'name': subject.name,
+                'chapters': chapter_count,
+                'quizzes': quiz_count,
+                'total_question': total_question
+            })
+
+        return {
+            'total_users': total_users,
+            'total_subjects': total_subjects,
+            'total_quizzes': total_quizzes,
+            'subjects_data': subjects_data
+        }
+
+api.add_resource(AdminSummaryManagment, '/admin/summary')
+# working
+
+
+class UserSummaryManagment(Resource):
+    @auth_required('token')
+    @cache.cached(timeout=60)
+    def get(self):
+        user_id = current_user.id
+        score_subquery = (
+            db.session.query(
+                Quiz.id.label('quiz_id'),
+                Quiz.name.label('quiz_name'),
+                func.sum(Score.total_score).label('total_score')
+            )
+            .join(Score, Score.quiz_id == Quiz.id)
+            .filter(Score.user_id == user_id)
+            .group_by(Quiz.id)
+            .subquery()
+        )
+
+
+        score_data = [
+            {
+                'quiz': row.quiz_name,
+                'total_score': row.total_score or 0
+            }
+            for row in db.session.query(score_subquery).all()
+        ]
+
+        chapter_subquery = (
+            db.session.query(
+                Chapter.id.label('chapter_id'),
+                Chapter.name.label('chapter_name'),
+                func.count(Quiz.id).label('quiz_count')
+            )
+            .outerjoin(Quiz, Quiz.chapter_id == Chapter.id)
+            .group_by(Chapter.id)
+            .subquery()
+        )
+
+        chapter_data = [
+            {
+                'chapter': row.chapter_name,
+                'quiz_count': row.quiz_count
+            }
+            for row in db.session.query(chapter_subquery).all()
+        ]
+
+        return jsonify({
+            'scores_per_quiz': score_data,
+            'quizzes_per_chapter': chapter_data
+        })
+
+api.add_resource(UserSummaryManagment, '/user/summary')
+
+
+
+
