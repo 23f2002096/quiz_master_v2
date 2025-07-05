@@ -33,10 +33,12 @@ const app = new Vue({
     <div class="container">
         <nav-bar></nav-bar>
         <router-view></router-view>
+        <app-footer></app-footer>
     </div>
     `,
     components:{
         "nav-bar": Navbar,
+        "app-footer":Footer,
     },
     
 }) 
