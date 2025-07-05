@@ -16,8 +16,6 @@ from application.extensions import cache
 api = Api(prefix='/api')
 
 
-
-
 # ===== Fields to Marshal =====
 user_output  = {
     'id': fields.Integer,
