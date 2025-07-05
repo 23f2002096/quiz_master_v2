@@ -9,13 +9,14 @@ from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import aliased
 from flask_restful import marshal
 from sqlalchemy import func
-from flask_caching import Cache
+from application.extensions import cache
+
 
 # ===== Initialize API =====
 api = Api(prefix='/api')
 
-# ====Initialize cahe===
-cache=Cache()
+
+
 
 # ===== Fields to Marshal =====
 user_output  = {
@@ -873,7 +874,6 @@ class AdminSummaryManagment(Resource):
             quiz_count = len(quizzes)
             total_question = sum(quiz.total_question for quiz in quizzes)
 
-
             subjects_data.append({
                 'name': subject.name,
                 'chapters': chapter_count,
@@ -891,6 +891,7 @@ class AdminSummaryManagment(Resource):
 api.add_resource(AdminSummaryManagment, '/admin/summary')
 # working
 
+    
 
 class UserSummaryManagment(Resource):
     @auth_required('token')
