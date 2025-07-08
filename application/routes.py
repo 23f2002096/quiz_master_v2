@@ -73,3 +73,70 @@ def login():
         return jsonify({"message": "Wrong Password"}), 400
     
 
+
+# new code:
+@app.route('/download-csv', methods=['GET'])
+@roles_required('user')
+def download_csv():
+    """
+    Endpoint to trigger CSV generation for the logged-in user.
+    """
+    # Get the logged-in user's ID
+    user_id = current_user.id
+
+    # Trigger Celery task to generate CSV asynchronously
+    task = create_resource_csv.delay(user_id)
+
+    # Return task ID so the client can track progress
+    return jsonify({"task_id": task.id}), 202
+
+@app.route('/get-csv/<task_id>', methods=['GET'])
+@roles_required('user')
+def get_csv(task_id):
+    try:
+        res = AsyncResult(task_id)
+
+        if res.ready():
+            if res.successful():
+                filename = res.result
+
+                if filename:
+                    # Send the file as an attachment
+                    return send_file(
+                        filename,
+                        as_attachment=True,
+                        download_name=f"user_{current_user.id}_quiz_data.csv",
+                        mimetype='text/csv'
+                    )
+                else:
+                    return jsonify({"error": "File path is empty"}), 404
+            else:
+                return jsonify({
+                    "error": "Task failed",
+                    "details": str(res.result)
+                }), 500
+        else:
+            return jsonify({
+                "message": "Task is still processing",
+                "status": res.status
+            }), 202
+
+    except Exception as e:
+        app.logger.error(f"Error in get_csv: {str(e)}")
+        return jsonify({"error": "An unexpected error occurred"}), 500
+    
+@app.route('/admin/download-csv', methods=['GET'])
+@roles_required('admin') 
+def admin_download_csv():
+    task = create_admin_resource_csv.delay()
+    return jsonify({"task_id": task.id}), 202
+
+@app.route('/admin/get-csv/<task_id>', methods=['GET'])
+@roles_required('admin')  
+def admin_get_csv(task_id):
+    res = AsyncResult(task_id)
+    if res.ready():
+        filename = res.result
+        return send_file(filename, as_attachment=True)
+    else:
+        return jsonify({"status": "pending", "message": "Task is still processing"}), 202
