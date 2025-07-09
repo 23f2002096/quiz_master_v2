@@ -2,6 +2,7 @@ amqp==5.3.1
 aniso8601==10.0.1
 billiard==4.2.1
 blinker==1.9.0
+cachelib==0.13.0
 celery==5.5.2
 click==8.1.8
 click-didyoumean==0.3.1
@@ -10,6 +11,7 @@ click-repl==0.3.0
 dnspython==2.7.0
 email_validator==2.2.0
 Flask==3.1.0
+Flask-Caching==2.3.1
 Flask-Excel==0.0.7
 Flask-Login==0.6.3
 Flask-Principal==0.4.0
