@@ -7,12 +7,14 @@ from flask_security import Security, SQLAlchemyUserDatastore,hash_password
 from werkzeug.security import generate_password_hash
 from application.celery_init import celery_init_app #new line
 from celery.schedules import crontab
+from application.extensions import cache
 
 
 def create_app():
     app = Flask(__name__)
     app.config.from_object(LocalDevelopmentConfig)
     db.init_app(app)
+    cache.init_app(app, config={'CACHE_TYPE': 'simple'})
     api.init_app(app)
     datastore = SQLAlchemyUserDatastore(db, User, Role)
     app.security = Security(app, datastore)
