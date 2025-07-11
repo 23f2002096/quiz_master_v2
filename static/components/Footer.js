@@ -10,7 +10,6 @@ export default {
         </p>
 
         <div class="mb-3">
-          <p class="mb-1"><strong>Location:</strong> Telibagh Lucknow, India</p>
           <p class="mb-1"><strong>Email:</strong> 23f2002096@ds.study.iitm.ac.in</p>
           <p class="mb-1"><strong>Phone:</strong> +91 9140303445</p>
         </div>
