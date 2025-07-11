@@ -74,7 +74,6 @@ def login():
     
 
 
-# new code:
 @app.route('/download-csv', methods=['GET'])
 @roles_required('user')
 def download_csv():
@@ -82,10 +81,10 @@ def download_csv():
     Endpoint to trigger CSV generation for the logged-in user.
     """
     # Get the logged-in user's ID
-    user_id = current_user.id
+    user_id =current_user.id
 
     # Trigger Celery task to generate CSV asynchronously
-    task = create_resource_csv.delay(user_id)
+    task =create_resource_csv.delay(user_id)
 
     # Return task ID so the client can track progress
     return jsonify({"task_id": task.id}), 202

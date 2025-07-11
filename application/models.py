@@ -83,7 +83,7 @@ class UserAnswer(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('user.id', ondelete='CASCADE'), nullable=False)
     quiz_id = db.Column(db.Integer, db.ForeignKey('quiz.id', ondelete='CASCADE'), nullable=False)
     question_id = db.Column(db.Integer, db.ForeignKey('question.id', ondelete='CASCADE'), nullable=False)
-    chosen_option = db.Column(db.String(100), nullable=True)  # Option selected by the user
+    chosen_option = db.Column(db.String(100), nullable=True)
 
     __table_args__ = (
         db.UniqueConstraint('user_id', 'quiz_id', 'question_id', name='uq_user_quiz_question'),
