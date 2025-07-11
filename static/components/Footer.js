@@ -16,9 +16,9 @@ export default {
         </div>
 
         <div class="mb-3">
-          <a href="https://www.linkedin.com/in/neeraj-kumar-data-scientist" class="text-decoration-none me-3" style="color: #3b5998;">Linkedin</a>
-          <a href="#" class="text-decoration-none me-3" style="color: #55acee;">Twitter</a>
-          <a href="https://github.com/jikumarneeraj" class="text-decoration-none" style="color: #ac2bac;">Github</a>
+          <a href="https://www.linkedin.com/in/neeraj-kumar-data-scientist" class="text-decoration-none me-3" style="color: #3b5998;" target="_blank">Linkedin</a>
+          <a href="#" class="text-decoration-none me-3" style="color: #55acee;" target="_blank">Twitter</a>
+          <a href="https://github.com/jikumarneeraj" class="text-decoration-none" style="color: #ac2bac;" target="_blank">Github</a>
         </div>
 
         <div class="text-muted small">
