@@ -69,7 +69,7 @@ def create_admin_resource_csv():
             current_app.logger.warning(f"User ID: {row[0]}, Name: {row[1]}, Quizzes: {row[2]}, Avg: {row[3]}")
         current_app.logger.warning(f"{user_data}")
 
-        # Convert query result into list of dicts
+        # Convert query result into list of dictionaries
         csv_data = [
             {
                 "User ID": row[0],
