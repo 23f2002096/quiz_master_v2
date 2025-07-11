@@ -92,7 +92,6 @@ export default {
         if (this.quizScoreChartInstance) {
           this.quizScoreChartInstance.destroy();
         }
-        // 10 distinct colors
         const barColors = [
           'rgba(255, 99, 132, 0.7)',    // Red
           'rgba(54, 162, 235, 0.7)',    // Blue
@@ -146,7 +145,6 @@ export default {
         if (this.chapterQuizChartInstance) {
           this.chapterQuizChartInstance.destroy();
         }
-        // 10 distinct colors (same as above, or change as you like)
         const barColors = [
           'rgba(255, 99, 132, 0.7)',
           'rgba(54, 162, 235, 0.7)',

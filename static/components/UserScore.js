@@ -43,6 +43,7 @@ export default {
       </div>
     </div>
   `,
+  
   data() {
     return {
       quizScoreList: [],

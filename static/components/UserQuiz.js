@@ -181,7 +181,6 @@ export default {
       return Math.round(((this.activeQuestionIndex + 1) / this.totalQuestions) * 100);
     }
   },
-
   methods: {
     loadQuizData() {
       this.loadingQuiz = true;
