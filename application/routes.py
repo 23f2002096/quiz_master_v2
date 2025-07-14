@@ -39,7 +39,7 @@ def create_user():
         db.session.commit()
         return jsonify({
             "message":"User created Successfully"
-        }),201
+        }),200
     return jsonify({
             "message":"User already exists"
         }),400
@@ -77,17 +77,13 @@ def login():
 @app.route('/download-csv', methods=['GET'])
 @roles_required('user')
 def download_csv():
-    """
-    Endpoint to trigger CSV generation for the logged-in user.
-    """
-    # Get the logged-in user's ID
+
     user_id =current_user.id
 
     # Trigger Celery task to generate CSV asynchronously
     task =create_resource_csv.delay(user_id)
 
-    # Return task ID so the client can track progress
-    return jsonify({"task_id": task.id}), 202
+    return jsonify({"task_id": task.id}), 200
 
 @app.route('/get-csv/<task_id>', methods=['GET'])
 @roles_required('user')
@@ -100,7 +96,7 @@ def get_csv(task_id):
                 filename = res.result
 
                 if filename:
-                    # Send the file as an attachment
+                    # Sending the file as an attachment
                     return send_file(
                         filename,
                         as_attachment=True,
@@ -118,7 +114,7 @@ def get_csv(task_id):
             return jsonify({
                 "message": "Task is still processing",
                 "status": res.status
-            }), 202
+            }), 200
 
     except Exception as e:
         app.logger.error(f"Error in get_csv: {str(e)}")
@@ -128,7 +124,7 @@ def get_csv(task_id):
 @roles_required('admin') 
 def admin_download_csv():
     task = create_admin_resource_csv.delay()
-    return jsonify({"task_id": task.id}), 202
+    return jsonify({"task_id": task.id}), 200
 
 @app.route('/admin/get-csv/<task_id>', methods=['GET'])
 @roles_required('admin')  
@@ -138,4 +134,4 @@ def admin_get_csv(task_id):
         filename = res.result
         return send_file(filename, as_attachment=True)
     else:
-        return jsonify({"status": "pending", "message": "Task is still processing"}), 202
+        return jsonify({"status": "pending", "message": "Task is still processing"}), 200

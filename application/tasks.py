@@ -110,7 +110,7 @@ def send_daily_reminders():
         users = User.query.filter(User.roles.contains(user_role)).all()
         subject = "New Quizzes Available!"
         for user in users:
-            body = f"Hello {user.full_name},\n\nNew quizzes have been added. Log in to attempt them!"
+            body = f"Hello {user.full_name},\n\nNew quizzes have been added. Log in to attempt the quiz!!"
             quiz_names = ", ".join([quiz.name for quiz in new_quizzes])
             body += f"\n\nNew Quizzes: {quiz_names}"
             send_email(user.email, subject, body)
@@ -136,10 +136,7 @@ def send_monthly_report_email(user):
     
     total_quizzes = len(scores)
     average_score = sum([score.total_score for score in scores]) / total_quizzes if total_quizzes > 0 else 0
-    print(f"\n\n user: {user}")
-    print(f"\n\n Total quizzes: {total_quizzes}")
-    print(f"\n\n scores: {scores}")
-    print(f"\n\n average: {average_score}")
+    
     html_content = render_template(
         'monthly_report.html',
         user=user,
