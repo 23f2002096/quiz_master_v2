@@ -46,17 +46,17 @@ Quiz Master is a multi-user web application designed for educational institution
 
 ---
 
-## How to Run the Application
+## How to Run the Application  
 
-**Create virtual environment:** python3 -m venv .env
-**Activate virtual environment:**  source .env/bin/activate
-**Install dependencies:** pip install -r requirements.txt
+**Create virtual environment:** python3 -m venv .env  
+**Activate virtual environment:**  source .env/bin/activate  
+**Install dependencies:** pip install -r requirements.txt  
 
-## These step write on diffrent terminal and activate environment in all the terminals
+## These step write on diffrent terminal and activate environment in all the terminals  
 
-**step-1 in terminal -->>** MailHog
-**step-2 in terminal -->>** sudo systemctl stop redis || redis-server
-**step-3 in terminal -->>** celery -A app.celery worker --loglevel INFO
-**step-4 in terminal -->>** celery -A app.celery beat --loglevel INFO
-**step-5 in terminal -->>** python3 app.py
+**step-1 in terminal -->>** MailHog  
+**step-2 in terminal -->>** sudo systemctl stop redis || redis-server  
+**step-3 in terminal -->>** celery -A app.celery worker --loglevel INFO  
+**step-4 in terminal -->>** celery -A app.celery beat --loglevel INFO  
+**step-5 in terminal -->>** python3 app.py  
 
